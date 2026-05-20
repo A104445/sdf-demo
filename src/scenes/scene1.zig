@@ -12,7 +12,7 @@ pub fn init_metadata() scene.SceneMetadata {
 pub fn init_cam() state.scene_state {
     return .{
         .bound_texture_count = 0,
-        .cam_pos = .{ 0.0, 0.0, 0.0 },
+        .cam_pos = .{ 0.0, 0.0, 1.0 },
         .yaw = 0.0,
         .pitch = 0.0,
     };

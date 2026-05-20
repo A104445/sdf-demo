@@ -178,34 +178,47 @@ pub fn fullscreenQuad() !u32 {
 
     return EBO;
 }
-
 pub fn handleMovement(appState: *state.app_state) bool {
-    // --- WASD MOVEMENT LOGIC ---
+    // --- WASD & ARROW MOVEMENT LOGIC ---
     const speed: f32 = 0.05; // Adjust this to change movement speed
     var moved_this_frame = false;
 
-    // Forward (W) / Backward (S)
-    if (c.glfwGetKey(appState.window, c.GLFW_KEY_W) == c.GLFW_PRESS) {
+    // Forward (W or Up Arrow)
+    if (c.glfwGetKey(appState.window, c.GLFW_KEY_W) == c.GLFW_PRESS or
+        c.glfwGetKey(appState.window, c.GLFW_KEY_UP) == c.GLFW_PRESS)
+    {
         appState.scenes.current_state.cam_pos[0] -= @sin(appState.scenes.current_state.yaw) * speed;
         appState.scenes.current_state.cam_pos[2] -= @cos(appState.scenes.current_state.yaw) * speed;
         moved_this_frame = true;
     }
-    if (c.glfwGetKey(appState.window, c.GLFW_KEY_S) == c.GLFW_PRESS) {
+
+    // Backward (S or Down Arrow)
+    if (c.glfwGetKey(appState.window, c.GLFW_KEY_S) == c.GLFW_PRESS or
+        c.glfwGetKey(appState.window, c.GLFW_KEY_DOWN) == c.GLFW_PRESS)
+    {
         appState.scenes.current_state.cam_pos[0] += @sin(appState.scenes.current_state.yaw) * speed;
         appState.scenes.current_state.cam_pos[2] += @cos(appState.scenes.current_state.yaw) * speed;
         moved_this_frame = true;
     }
-    // Left (A) / Right (D)
-    if (c.glfwGetKey(appState.window, c.GLFW_KEY_A) == c.GLFW_PRESS) {
+
+    // Left (A or Left Arrow)
+    if (c.glfwGetKey(appState.window, c.GLFW_KEY_A) == c.GLFW_PRESS or
+        c.glfwGetKey(appState.window, c.GLFW_KEY_LEFT) == c.GLFW_PRESS)
+    {
         appState.scenes.current_state.cam_pos[0] -= @cos(appState.scenes.current_state.yaw) * speed;
         appState.scenes.current_state.cam_pos[2] += @sin(appState.scenes.current_state.yaw) * speed;
         moved_this_frame = true;
     }
-    if (c.glfwGetKey(appState.window, c.GLFW_KEY_D) == c.GLFW_PRESS) {
+
+    // Right (D or Right Arrow)
+    if (c.glfwGetKey(appState.window, c.GLFW_KEY_D) == c.GLFW_PRESS or
+        c.glfwGetKey(appState.window, c.GLFW_KEY_RIGHT) == c.GLFW_PRESS)
+    {
         appState.scenes.current_state.cam_pos[0] += @cos(appState.scenes.current_state.yaw) * speed;
         appState.scenes.current_state.cam_pos[2] -= @sin(appState.scenes.current_state.yaw) * speed;
         moved_this_frame = true;
     }
+
     // Up (Space) / Down (Left Shift)
     if (c.glfwGetKey(appState.window, c.GLFW_KEY_SPACE) == c.GLFW_PRESS) {
         appState.scenes.current_state.cam_pos[1] += speed;
@@ -218,3 +231,42 @@ pub fn handleMovement(appState: *state.app_state) bool {
 
     return moved_this_frame;
 }
+// pub fn handleMovement(appState: *state.app_state) bool {
+//     // --- WASD MOVEMENT LOGIC ---
+//     const speed: f32 = 0.05; // Adjust this to change movement speed
+//     var moved_this_frame = false;
+//
+//     // Forward (W) / Backward (S)
+//     if (c.glfwGetKey(appState.window, c.GLFW_KEY_W) == c.GLFW_PRESS) {
+//         appState.scenes.current_state.cam_pos[0] -= @sin(appState.scenes.current_state.yaw) * speed;
+//         appState.scenes.current_state.cam_pos[2] -= @cos(appState.scenes.current_state.yaw) * speed;
+//         moved_this_frame = true;
+//     }
+//     if (c.glfwGetKey(appState.window, c.GLFW_KEY_S) == c.GLFW_PRESS) {
+//         appState.scenes.current_state.cam_pos[0] += @sin(appState.scenes.current_state.yaw) * speed;
+//         appState.scenes.current_state.cam_pos[2] += @cos(appState.scenes.current_state.yaw) * speed;
+//         moved_this_frame = true;
+//     }
+//     // Left (A) / Right (D)
+//     if (c.glfwGetKey(appState.window, c.GLFW_KEY_A) == c.GLFW_PRESS) {
+//         appState.scenes.current_state.cam_pos[0] -= @cos(appState.scenes.current_state.yaw) * speed;
+//         appState.scenes.current_state.cam_pos[2] += @sin(appState.scenes.current_state.yaw) * speed;
+//         moved_this_frame = true;
+//     }
+//     if (c.glfwGetKey(appState.window, c.GLFW_KEY_D) == c.GLFW_PRESS) {
+//         appState.scenes.current_state.cam_pos[0] += @cos(appState.scenes.current_state.yaw) * speed;
+//         appState.scenes.current_state.cam_pos[2] -= @sin(appState.scenes.current_state.yaw) * speed;
+//         moved_this_frame = true;
+//     }
+//     // Up (Space) / Down (Left Shift)
+//     if (c.glfwGetKey(appState.window, c.GLFW_KEY_SPACE) == c.GLFW_PRESS) {
+//         appState.scenes.current_state.cam_pos[1] += speed;
+//         moved_this_frame = true;
+//     }
+//     if (c.glfwGetKey(appState.window, c.GLFW_KEY_LEFT_SHIFT) == c.GLFW_PRESS) {
+//         appState.scenes.current_state.cam_pos[1] -= speed;
+//         moved_this_frame = true;
+//     }
+//
+//     return moved_this_frame;
+// }

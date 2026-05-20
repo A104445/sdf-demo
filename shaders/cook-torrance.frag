@@ -172,6 +172,26 @@ vec3 RandomDirection(inout uint state) {
 }
 
 // Cook torrance things
+
+float GeometrySchlickGGX(float NdotV, float roughness) {
+  float a = roughness;
+  float k = (a * a) / 2.0;
+
+  float nom = NdotV;
+  float denom = NdotV * (1.0 - k) + k;
+
+  return nom / denom;
+}
+
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+  float NdotV = max(dot(N, V), 0.0);
+  float NdotL = max(dot(N, L), 0.0);
+  float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+  float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+
+  return ggx1 * ggx2;
+}
+
 vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness) {
   // Disney/Epic Games roughness remapping
   float a = roughness * roughness;
@@ -316,11 +336,11 @@ SDF map(vec3 p) {
   sun.distance = sdBox(p - vec3(0.0, 0.5, 0.5), vec3(0.2, 0.01, 0.2));
   sun.id = 0.0;
 
-  SDF ground;
-  ground.distance = sdPlane(p, vec3(0.0, 1.0, 0.0), 0.4);
+  sdf ground;
+  ground.distance = sdplane(p, vec3(0.0, 1.0, 0.0), 0.4);
   ground.id = 9.0;
   if (ground.distance < 0.05) {
-    float ground_disp = textureLod(u_ground_disp, p.xz, 0.0).r;
+    float ground_disp = texturelod(u_ground_disp, p.xz, 0.0).r;
     ground_disp *= 0.005;
     ground.distance = ground.distance - ground_disp;
   }
@@ -461,11 +481,8 @@ Material getMaterial(SDF object, vec3 p, inout vec3 normal) {
     material.roughness = 1.0; // Quite rough
     break;
     case 9:
-    // vec3 texColor = triPlanar(u_ground, p, normal).rgb;
-    // float texRough = triPlanar(u_ground_roughness, p, normal).r;
     vec3 texColor = texture(u_ground, p.xz).rgb;
     float texRough = texture(u_ground_roughness, p.xz).r;
-
     material.albedo = SRGBToLinear(texColor);
     material.roughness = texRough;
     material.metallic = 0.0;
@@ -475,18 +492,16 @@ Material getMaterial(SDF object, vec3 p, inout vec3 normal) {
     break;
     // glass
     case 10:
-    // material.albedo = vec3(0.0, 0.0, 0.0);
-    material.albedo = vec3(1.0, 0.0, 0.0);
+    material.albedo = vec3(0.0, 0.0, 0.0);
+    // material.albedo = vec3(1.0, 0.0, 0.0);
     material.metallic = 0.0;
     material.transmission = 1.0;
     material.IOR = 1.3;
     material.roughness = 0.02;
-    material.absorption = vec3(0.0);
-      // material.absorption = vec3(1.0, 1.0, 1.0);
+    // material.absorption = vec3(0.0);
+    material.absorption = vec3(1.0, 1.0, 1.0);
     break;
     case 11:
-    // material.albedo = SRGBToLinear(triPlanar(u_tile, p, normal).rgb);
-    // material.roughness = triPlanar(u_tile_roughness, p, normal).r;
     material.albedo = SRGBToLinear(texture(u_tile, p.xy).rgb);
     material.roughness = texture(u_tile_roughness, p.xy).r;
     material.metallic = 0.0;
@@ -570,30 +585,46 @@ vec3 getColorForRay(in vec3 startRayPos, in vec3 startRayDir,
 
     if (roll < P_reflect) {
       // PATH A: SPECULAR REFLECTION
+      vec3 V = -rayDir; // View vector is the reverse of the incoming ray
+
       vec3 H = ImportanceSampleGGX(
           vec2(RandomFloat01(rngState), RandomFloat01(rngState)),
           hitInfo.normal, hitInfo.material.roughness);
-      rayDir = reflect(rayDir, H);
+
+      // The new outgoing ray direction (L)
+      vec3 L = reflect(rayDir, H);
+      rayDir = L;
       rayPos = hitPos + hitInfo.normal * c_rayPosNormalNudge;
 
-      // Dielectric reflections are white, Metal reflections are tinted by the
-      // albedo
+      // Calculate the Geometry/Shadowing term
+      float G = GeometrySmith(hitInfo.normal, V, L, hitInfo.material.roughness);
+
+      // The Monte Carlo estimator weight when importance sampling GGX
+      float NdotV = max(dot(hitInfo.normal, V), 0.001);
+      float NdotH = max(dot(hitInfo.normal, H), 0.001);
+      float VdotH = max(dot(V, H), 0.001);
+
+      // The D term and 4*NdotL cancel out with the PDF
+      float weight = (G * VdotH) / (NdotV * NdotH);
+
+      // Dielectric reflections are white, Metal reflections are tinted by albedo
       vec3 reflectionColor =
         mix(vec3(1.0f), hitInfo.material.albedo, hitInfo.material.metallic);
-      throughput *= reflectionColor;
+
+      throughput *= reflectionColor * weight;
       throughput /= P_reflect;
     } else if (roll < P_reflect + P_transmit) {
+
       // PATH B: TRANSMISSION (GLASS/WATER)
       vec3 H = ImportanceSampleGGX(
           vec2(RandomFloat01(rngState), RandomFloat01(rngState)),
           hitInfo.normal, hitInfo.material.roughness);
+
       rayDir = refract(rayDir, H, eta);
 
-      // Nudge the ray *into* the object
+      // Nudge the ray *into* the object by subtracting the normal
       rayPos = hitPos - hitInfo.normal * c_rayPosNormalNudge;
 
-      // Note: We don't apply surface color here. Color comes from volume
-      // absorption.
       throughput /= P_transmit;
     } else {
       // PATH C: DIFFUSE

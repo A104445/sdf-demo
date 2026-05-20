@@ -36,19 +36,19 @@ const float c_rayPosNormalNudge = 0.01f;
 
 vec3 LessThan(vec3 f, float value) {
   return vec3((f.x < value) ? 1.0f : 0.0f, (f.y < value) ? 1.0f : 0.0f,
-              (f.z < value) ? 1.0f : 0.0f);
+    (f.z < value) ? 1.0f : 0.0f);
 }
 
 vec3 LinearToSRGB(vec3 rgb) {
   rgb = clamp(rgb, 0.0f, 1.0f);
   return mix(pow(rgb, vec3(1.0f / 2.4f)) * 1.055f - 0.055f, rgb * 12.92f,
-             LessThan(rgb, 0.0031308f));
+    LessThan(rgb, 0.0031308f));
 }
 
 vec3 SRGBToLinear(vec3 rgb) {
   rgb = clamp(rgb, 0.0f, 1.0f);
   return mix(pow(((rgb + 0.055f) / 1.055f), vec3(2.4f)), rgb / 12.92f,
-             LessThan(rgb, 0.04045f));
+    LessThan(rgb, 0.04045f));
 }
 
 vec3 ACESFilm(vec3 x) {
@@ -61,7 +61,7 @@ vec3 ACESFilm(vec3 x) {
 }
 
 float FresnelReflectAmount(float n1, float n2, vec3 normal, vec3 incident,
-                           float f0, float f90) {
+  float f0, float f90) {
   float r0 = (n1 - n2) / (n1 + n2);
   r0 *= r0;
   float cosX = -dot(normal, incident);
@@ -99,8 +99,8 @@ struct Ray {
 };
 
 struct Material {
-  vec3 albedo;     
-  float roughness; 
+  vec3 albedo;
+  float roughness;
   float metallic;
   vec3 emissive;
   float transmission;
@@ -120,7 +120,9 @@ struct SRayHitInfo {
   Material material;
 };
 
-float opUnion(float a, float b) { return min(a, b); }
+float opUnion(float a, float b) {
+  return min(a, b);
+}
 
 SDF opUnionID(SDF res1, SDF res2) {
   if (res1.distance < res2.distance) {
@@ -169,7 +171,7 @@ vec3 RandomUnitVector(inout uint state) {
 
 vec2 RandomPointInCircle(inout uint state) {
   float angle = RandomValue(state) * c_twopi;
-  float radius = sqrt(RandomValue(state)); 
+  float radius = sqrt(RandomValue(state));
   return vec2(cos(angle), sin(angle)) * radius;
 }
 
@@ -192,11 +194,17 @@ vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness) {
   return normalize(sampleVec);
 }
 
-float dot2(vec3 v) { return dot(v, v); }
+float dot2(vec3 v) {
+  return dot(v, v);
+}
 
-float sdSphere(vec3 p, float r) { return length(p) - r; }
+float sdSphere(vec3 p, float r) {
+  return length(p) - r;
+}
 
-float sdPlane(vec3 p, vec3 n, float h) { return dot(p, n) + h; }
+float sdPlane(vec3 p, vec3 n, float h) {
+  return dot(p, n) + h;
+}
 
 float sdBox(vec3 p, vec3 b) {
   vec3 q = abs(p) - b;
@@ -224,8 +232,8 @@ vec3 triPlanar(sampler2D tex, vec3 p, vec3 normal) {
   normal = pow(normal, vec3(5.0));
   normal /= normal.x + normal.y + normal.z;
   return (texture(tex, p.xy * 0.5 + 0.5) * normal.z +
-          texture(tex, p.xz * 0.5 + 0.5) * normal.y +
-          texture(tex, p.yz * 0.5 + 0.5) * normal.x).rgb;
+    texture(tex, p.xz * 0.5 + 0.5) * normal.y +
+    texture(tex, p.yz * 0.5 + 0.5) * normal.x).rgb;
 }
 
 vec3 triPlanarNormal(sampler2D tex, vec3 p, vec3 geomNormal) {
@@ -238,8 +246,8 @@ vec3 triPlanarNormal(sampler2D tex, vec3 p, vec3 geomNormal) {
   vec3 tZ = texture(tex, p.xy * 0.5).rgb * 2.0 - 1.0;
 
   tX.x *= sign(geomNormal.x);
-  tY.x *= sign(geomNormal.y); 
-  tZ.x *= sign(geomNormal.z); 
+  tY.x *= sign(geomNormal.y);
+  tZ.x *= sign(geomNormal.z);
 
   tX = vec3(tX.xy + geomNormal.zy, abs(tX.z) * geomNormal.x);
   tY = vec3(tY.xy + geomNormal.xz, abs(tY.z) * geomNormal.y);
@@ -334,8 +342,8 @@ SDF map(vec3 p) {
 vec3 getNormal(vec3 p) {
   vec2 e = vec2(EPSILON, 0.0);
   return normalize(vec3(map(p + e.xyy).distance - map(p - e.xyy).distance,
-                        map(p + e.yxy).distance - map(p - e.yxy).distance,
-                        map(p + e.yyx).distance - map(p - e.yyx).distance));
+      map(p + e.yxy).distance - map(p - e.yxy).distance,
+      map(p + e.yyx).distance - map(p - e.yyx).distance));
 }
 
 SDF rayMarch(vec3 ro, vec3 rd) {
@@ -343,7 +351,7 @@ SDF rayMarch(vec3 ro, vec3 rd) {
   float t = 0.0;
   for (int i = 0; i < MAX_STEPS; i++) {
     vec3 p = ro + rd * t;
-    hit = map(p); 
+    hit = map(p);
     float stepDist = max(abs(hit.distance) * 0.5, EPSILON * 0.5);
     t += stepDist;
     object.distance = hit.distance;
@@ -360,71 +368,71 @@ Material getMaterial(SDF object, vec3 p, inout vec3 normal) {
   Material material = GetZeroedMaterial();
   switch (int(object.id)) {
     case 0:
-      vec3 color = SRGBToLinear(u_tempColor);
-      material.emissive = color * 20.0f;
-      material.albedo = vec3(0);
-      break;
+    vec3 color = SRGBToLinear(u_tempColor);
+    material.emissive = color * 20.0f;
+    material.albedo = vec3(0);
+    break;
     case 1:
-      material.emissive = vec3(0.0, 0.0, 0.0);
-      material.albedo = vec3(0.1, 0.7, 0.1);
-      break;
+    material.emissive = vec3(0.0, 0.0, 0.0);
+    material.albedo = vec3(0.1, 0.7, 0.1);
+    break;
     case 2:
-      material.emissive = vec3(0.0, 0.0, 0.0);
-      material.albedo = vec3(0.7, 0.7, 0.7);
-      break;
+    material.emissive = vec3(0.0, 0.0, 0.0);
+    material.albedo = vec3(0.7, 0.7, 0.7);
+    break;
     case 3:
-      material.emissive = vec3(0.0, 0.0, 0.0);
-      material.albedo = vec3(0.7, 0.1, 0.1);
-      break;
+    material.emissive = vec3(0.0, 0.0, 0.0);
+    material.albedo = vec3(0.7, 0.1, 0.1);
+    break;
     case 4:
-      material.emissive = vec3(0.0, 0.0, 0.0);
-      float stripe = mod(floor(p.x * 20.0), 2.0);
-      material.albedo = mix(vec3(0.7f, 0.7f, 0.7f), vec3(0.2f, 0.2f, 0.2f), stripe);
-      break;
+    material.emissive = vec3(0.0, 0.0, 0.0);
+    float stripe = mod(floor(p.x * 20.0), 2.0);
+    material.albedo = mix(vec3(0.7f, 0.7f, 0.7f), vec3(0.2f, 0.2f, 0.2f), stripe);
+    break;
     case 5:
-      material.emissive = vec3(0.0, 0.0, 0.0);
-      material.albedo = vec3(0.7f, 0.1f, 0.1f);
-      break;
+    material.emissive = vec3(0.0, 0.0, 0.0);
+    material.albedo = vec3(0.7f, 0.1f, 0.1f);
+    break;
     case 6:
-      material.emissive = vec3(0.0, 0.0, 0.0);
-      material.albedo = vec3(0.1f, 0.7f, 0.1f);
-      break;
+    material.emissive = vec3(0.0, 0.0, 0.0);
+    material.albedo = vec3(0.1f, 0.7f, 0.1f);
+    break;
     case 7:
-      material.albedo = SRGBToLinear(triPlanar(u_onyx, p, normal).rgb);
-      material.metallic = 0.0;
-      material.roughness = triPlanar(u_onyx_roughness, p, normal).r;
-      break;
+    material.albedo = SRGBToLinear(triPlanar(u_onyx, p, normal).rgb);
+    material.metallic = 0.0;
+    material.roughness = triPlanar(u_onyx_roughness, p, normal).r;
+    break;
     case 8:
-      material.albedo = vec3(0.8, 0.1, 0.1); 
-      material.metallic = 0.0; 
-      material.roughness = 1.0; 
-      break;
+    material.albedo = vec3(0.8, 0.1, 0.1);
+    material.metallic = 0.0;
+    material.roughness = 1.0;
+    break;
     case 9:
-      vec3 texColor = texture(u_ground, p.xz).rgb;
-      float texRough = texture(u_ground_roughness, p.xz).r;
-      material.albedo = SRGBToLinear(texColor);
-      material.roughness = texRough;
-      material.metallic = 0.0;
-      break;
+    vec3 texColor = texture(u_ground, p.xz).rgb;
+    float texRough = texture(u_ground_roughness, p.xz).r;
+    material.albedo = SRGBToLinear(texColor);
+    material.roughness = texRough;
+    material.metallic = 0.0;
+    break;
     case 10:
-      material.albedo = vec3(0.0, 0.0, 0.0);
-      material.metallic = 0.0;
-      material.transmission = 1.0;
-      material.IOR = 1.3;
-      material.roughness = 0.02;
-      material.absorption = vec3(1.0, 0.0, 0.0);
-      break;
+    material.albedo = vec3(0.0, 0.0, 0.0);
+    material.metallic = 0.0;
+    material.transmission = 1.0;
+    material.IOR = 1.3;
+    material.roughness = 0.02;
+    material.absorption = vec3(0.0);
+    break;
     case 11:
-      material.albedo = SRGBToLinear(texture(u_tile, p.xy).rgb);
-      material.roughness = texture(u_tile_roughness, p.xy).r;
-      material.metallic = 0.0;
-      break;
+    material.albedo = SRGBToLinear(texture(u_tile, p.xy).rgb);
+    material.roughness = texture(u_tile_roughness, p.xy).r;
+    material.metallic = 0.0;
+    break;
     case 12:
-      material.albedo = vec3(1.0, 1.0, 0.0);
-      break;
+    material.albedo = vec3(1.0, 1.0, 0.0);
+    break;
     default:
-      material.albedo = vec3(1.0, 0.0, 1.0); 
-      break;
+    material.albedo = vec3(1.0, 0.0, 1.0);
+    break;
   }
   return material;
 }
@@ -454,12 +462,12 @@ vec3 sampleRectLight(vec3 hitPos, vec3 normal, Material mat, inout uint rngState
   // 1. Pick a random point on the bottom face of our rectangular light
   float rX = RandomValue(rngState) * 2.0 - 1.0;
   float rZ = RandomValue(rngState) * 2.0 - 1.0;
-  
+
   // We offset Y by -0.01 to match the bottom face of the sdBox
   vec3 lightPoint = c_lightPos + vec3(rX * c_lightSize.x, -0.01, rZ * c_lightSize.y);
-  
+
   // The normal of a ceiling light points straight down
-  vec3 lightNormal = vec3(0.0, -1.0, 0.0); 
+  vec3 lightNormal = vec3(0.0, -1.0, 0.0);
 
   vec3 toLight = lightPoint - hitPos;
   float dist2 = dot(toLight, toLight);
@@ -491,7 +499,7 @@ vec3 sampleRectLight(vec3 hitPos, vec3 normal, Material mat, inout uint rngState
   // Area of a rectangle = (width) * (height) -> (2 * half_x) * (2 * half_z)
   float area = (2.0 * c_lightSize.x) * (2.0 * c_lightSize.y);
   float pdfA = 1.0 / area;
-  
+
   // Convert Area PDF to Solid Angle PDF
   float pdfW = pdfA * dist2 / max(lightCos, 1e-4);
   if (pdfW <= 0.0) {
@@ -551,7 +559,7 @@ vec3 sampleRectLight(vec3 hitPos, vec3 normal, Material mat, inout uint rngState
 // }
 
 void getCurrentHit(vec3 rayOrigin, vec3 rayDirection,
-                   inout SRayHitInfo hitInfo) {
+  inout SRayHitInfo hitInfo) {
   SDF object = rayMarch(rayOrigin, rayDirection);
   if (object.distance < MAX_DIST) {
     hitInfo.dist = object.distance;
@@ -569,7 +577,7 @@ void getCurrentHit(vec3 rayOrigin, vec3 rayDirection,
 }
 
 vec3 getColorForRay(in vec3 startRayPos, in vec3 startRayDir,
-                    inout uint rngState) {
+  inout uint rngState) {
   vec3 ret = vec3(0.0f, 0.0f, 0.0f);
   vec3 throughput = vec3(1.0f, 1.0f, 1.0f);
   vec3 rayPos = startRayPos;
@@ -595,7 +603,7 @@ vec3 getColorForRay(in vec3 startRayPos, in vec3 startRayDir,
         hitInfo.material.transmission <= 0.0) {
       vec3 hitPosDirect = rayPos + rayDir * hitInfo.dist;
       ret += throughput * sampleRectLight(hitPosDirect, hitInfo.normal, hitInfo.material,
-                                          rngState);
+            rngState);
     }
 
     if (hitInfo.fromInside)
@@ -680,8 +688,8 @@ void main() {
   state = NextRandom(state);
   vec3 accumulated_color = vec3(0.0);
   int samples_per_frame = u_spf;
-  float focusDist = u_focusDist; 
-  float aperture = u_aperture; 
+  float focusDist = u_focusDist;
+  float aperture = u_aperture;
 
   for (int i = 0; i < samples_per_frame; i++) {
     vec2 jitter = vec2(RandomValue(state), RandomValue(state)) - 0.5;
@@ -694,9 +702,9 @@ void main() {
     vec3 rayDir = normalize(
         vec3(pixelTarget2D.x * aspectRatio, pixelTarget2D.y, -cameraDistance));
 
-    pR(rayDir.yz, u_cameraRot.y); 
-    pR(rayDir.xz, u_cameraRot.x); 
-    
+    pR(rayDir.yz, u_cameraRot.y);
+    pR(rayDir.xz, u_cameraRot.x);
+
     vec3 focal_point = u_cameraPos + rayDir * focusDist;
 
     vec3 camRight = vec3(1.0, 0.0, 0.0);
@@ -708,7 +716,7 @@ void main() {
     pR(camUp.xz, u_cameraRot.x);
 
     vec2 lensJitter = RandomPointInCircle(state) * aperture;
-    
+
     Ray ray;
     ray.origin = u_cameraPos + camRight * lensJitter.x + camUp * lensJitter.y;
     ray.direction = normalize(focal_point - ray.origin);
