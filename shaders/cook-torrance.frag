@@ -336,11 +336,11 @@ SDF map(vec3 p) {
   sun.distance = sdBox(p - vec3(0.0, 0.5, 0.5), vec3(0.2, 0.01, 0.2));
   sun.id = 0.0;
 
-  sdf ground;
-  ground.distance = sdplane(p, vec3(0.0, 1.0, 0.0), 0.4);
+  SDF ground;
+  ground.distance = sdPlane(p, vec3(0.0, 1.0, 0.0), 0.4);
   ground.id = 9.0;
   if (ground.distance < 0.05) {
-    float ground_disp = texturelod(u_ground_disp, p.xz, 0.0).r;
+    float ground_disp = textureLod(u_ground_disp, p.xz, 0.0).r;
     ground_disp *= 0.005;
     ground.distance = ground.distance - ground_disp;
   }
