@@ -475,12 +475,14 @@ Material getMaterial(SDF object, vec3 p, inout vec3 normal) {
     break;
     // glass
     case 10:
-    material.albedo = vec3(0.0, 0.0, 0.0);
+    // material.albedo = vec3(0.0, 0.0, 0.0);
+    material.albedo = vec3(1.0, 0.0, 0.0);
     material.metallic = 0.0;
     material.transmission = 1.0;
     material.IOR = 1.3;
     material.roughness = 0.02;
     material.absorption = vec3(0.0);
+      // material.absorption = vec3(1.0, 1.0, 1.0);
     break;
     case 11:
     // material.albedo = SRGBToLinear(triPlanar(u_tile, p, normal).rgb);

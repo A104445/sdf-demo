@@ -99,9 +99,24 @@ pub fn main() !void {
             .init_cam_fn = scenes.scene1.init_cam,
         },
         .{
+            .metadata = scenes.scene1_test.init_metadata(),
+            .init_fn = scenes.scene1_test.init,
+            .init_cam_fn = scenes.scene1_test.init_cam,
+        },
+        .{
             .metadata = scenes.no_tex.init_metadata(),
             .init_fn = scenes.no_tex.init,
             .init_cam_fn = scenes.no_tex.init_cam,
+        },
+        .{
+            .metadata = scenes.no_tex_before.init_metadata(),
+            .init_fn = scenes.no_tex_before.init,
+            .init_cam_fn = scenes.no_tex_before.init_cam,
+        },
+        .{
+            .metadata = scenes.testing_scene.init_metadata(),
+            .init_fn = scenes.testing_scene.init,
+            .init_cam_fn = scenes.testing_scene.init_cam,
         },
     };
 
@@ -278,6 +293,13 @@ pub fn main() !void {
         //camera position
         const uniform_cam_pos = gl.GetUniformLocation(current_scene.?.shader_program, "u_cameraPos");
         gl.Uniform3fv(uniform_cam_pos, 1, @ptrCast(&appState.scenes.current_state.cam_pos));
+
+        // aperture
+        const uniform_aperture = gl.GetUniformLocation(current_scene.?.shader_program, "u_aperture");
+        gl.Uniform1f(uniform_aperture, @floatCast(appState.scenes.current_state.aperture));
+        // focal distance
+        const unifrom_focal_distance = gl.GetUniformLocation(current_scene.?.shader_program, "u_focusDist");
+        gl.Uniform1f(unifrom_focal_distance, @floatCast(appState.scenes.current_state.focal_distance));
 
         if (utils.handleMovement(&appState)) {
             appState.renderer.should_reset_accumulation = true;

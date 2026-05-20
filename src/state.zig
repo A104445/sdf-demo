@@ -23,6 +23,8 @@ pub const scene_state = struct {
     yaw: f32 = 0,
     pitch: f32 = 0,
     bound_texture_count: u32 = 0,
+    aperture: f32 = 0,
+    focal_distance: f32 = 0.1,
 };
 
 pub const SceneManager = struct {

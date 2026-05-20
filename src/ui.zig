@@ -14,7 +14,8 @@ pub fn render(appState: *state.app_state) !void {
 
     c.ImGui_SetNextWindowSize(appState.imgui.window_size, c.ImGuiCond_FirstUseEver);
     c.ImGui_SetNextWindowPos(appState.imgui.window_pos, c.ImGuiCond_FirstUseEver);
-    _ = c.ImGui_Begin("Demos", &appState.imgui.is_active, c.ImGuiWindowFlags_NoSavedSettings);
+
+    _ = c.ImGui_Begin("Demos", &appState.imgui.is_active, c.ImGuiWindowFlags_NoSavedSettings | c.ImGuiWindowFlags_NoTitleBar);
     if (c.ImGui_Button("Save Render")) {
         appState.renderer.want_to_save = true;
         var w: c_int = 0;
@@ -44,6 +45,16 @@ pub fn render(appState: *state.app_state) !void {
     c.ImGui_SeparatorText("Metrics");
     c.ImGui_Text("Frame: %d", appState.renderer.total_accumulated_frames);
     c.ImGui_Text("Frame time: %.2f ms", appState.metrics.ms_per_frame);
+
+    c.ImGui_SeparatorText("Camera Control");
+    if (c.ImGui_SliderFloat("Aperture", @ptrCast(&appState.scenes.current_state.aperture), 0.0, 2.0)) {
+        // std.debug.print("aperture:{d}\n", .{appState.scenes.current_state.aperture});
+        appState.renderer.should_reset_accumulation = true;
+    }
+    if (c.ImGui_SliderFloat("Focal Distance", @ptrCast(&appState.scenes.current_state.focal_distance), 0.5, 100)) {
+        // std.debug.print("focal distance:{d}\n", .{appState.scenes.current_state.focal_distance});
+        appState.renderer.should_reset_accumulation = true;
+    }
 
     c.ImGui_SeparatorText("Position");
     c.ImGui_Text("x: %.2f", appState.scenes.current_state.cam_pos[0]);
