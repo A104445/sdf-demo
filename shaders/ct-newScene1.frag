@@ -261,7 +261,7 @@ SDF map(vec3 p) {
 
     SDF sphere;
     sphere.distance = sdSphere(p, 5.0);
-    sphere.id = 1.0;
+    sphere.id = 9.0;
 
     //Walls
     pMirrorOctant(p.xz, vec2(50, 50));

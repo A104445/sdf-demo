@@ -26,7 +26,7 @@ pub fn init(allocator: std.mem.Allocator) !scene.Scene {
     defer allocator.free(vert_source);
     const compiled_vert = try shaders.compileShader(allocator, vert_source, gl.VERTEX_SHADER);
 
-    const frag_path = "./shaders/testing.frag";
+    const frag_path = "./shaders/sanity.frag";
     const frag_source = try shaders.readFileToString(allocator, frag_path);
     defer allocator.free(frag_source);
     const compiled_frag = try shaders.compileShader(allocator, frag_source, gl.FRAGMENT_SHADER);
