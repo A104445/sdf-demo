@@ -7,8 +7,6 @@ const state = @import("state.zig");
 const cli = @import("cli.zig");
 const c = @import("c.zig").c;
 const ui = @import("ui.zig");
-// const scene1 = @import("scenes/scene1.zig");
-const Scene = @import("scene.zig");
 const scenes = @import("scenes/scenes.zig");
 
 fn errorCallback(errn: c_int, str: [*c]const u8) callconv(std.builtin.CallingConvention.c) void {
@@ -87,43 +85,10 @@ pub fn main() !void {
     }
     defer c.glfwTerminate();
 
-    const available_scenes = [_]Scene.SceneEntry{
-        .{
-            .metadata = scenes.sanity.init_metadata(),
-            .init_fn = scenes.sanity.init,
-            .init_cam_fn = scenes.sanity.init_cam,
-        },
-        .{
-            .metadata = scenes.scene1.init_metadata(),
-            .init_fn = scenes.scene1.init,
-            .init_cam_fn = scenes.scene1.init_cam,
-        },
-        .{
-            .metadata = scenes.scene1_test.init_metadata(),
-            .init_fn = scenes.scene1_test.init,
-            .init_cam_fn = scenes.scene1_test.init_cam,
-        },
-        .{
-            .metadata = scenes.no_tex.init_metadata(),
-            .init_fn = scenes.no_tex.init,
-            .init_cam_fn = scenes.no_tex.init_cam,
-        },
-        .{
-            .metadata = scenes.no_tex_before.init_metadata(),
-            .init_fn = scenes.no_tex_before.init,
-            .init_cam_fn = scenes.no_tex_before.init_cam,
-        },
-        .{
-            .metadata = scenes.testing_scene.init_metadata(),
-            .init_fn = scenes.testing_scene.init,
-            .init_cam_fn = scenes.testing_scene.init_cam,
-        },
-    };
-
     var appState = state.app_state{
         .scenes = .{
             .allocator = allocator,
-            .registry = &available_scenes,
+            .registry = scenes.registry,
         },
     };
     appState.window_title = "SDF Path Tracing";
@@ -198,6 +163,22 @@ pub fn main() !void {
         gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, pass1_textures[i], 0);
     }
     //cleanup
+    gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
+    gl.BindTexture(gl.TEXTURE_2D, 0);
+
+    // Dedicated FBO for screenshots at render resolution (so saved PNGs match
+    // render_w/render_h, not the window size). The tone-map pass renders into
+    // this on demand and we ReadPixels from it.
+    var screenshot_fbo: u32 = undefined;
+    var screenshot_texture: u32 = undefined;
+    gl.GenFramebuffers(1, @ptrCast(&screenshot_fbo));
+    gl.GenTextures(1, @ptrCast(&screenshot_texture));
+    gl.BindTexture(gl.TEXTURE_2D, screenshot_texture);
+    gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, appState.renderer.render_w, appState.renderer.render_h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.BindFramebuffer(gl.FRAMEBUFFER, screenshot_fbo);
+    gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, screenshot_texture, 0);
     gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
     gl.BindTexture(gl.TEXTURE_2D, 0);
 
@@ -352,9 +333,27 @@ pub fn main() !void {
         gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 0);
 
         if (appState.renderer.want_to_save) {
-            utils.saveScreenshot(allocator, win_w, win_h, appState.renderer.total_accumulated_frames) catch |err| {
+            // Re-run the tone-map pass into the render-resolution screenshot FBO so the
+            // saved image matches render_w/render_h (not the window). main.frag computes
+            // UVs as fragCoord / u_resolution, so the viewport and u_resolution must both
+            // be set to render res for a 1:1 sample of the accumulation texture.
+            gl.BindFramebuffer(gl.FRAMEBUFFER, screenshot_fbo);
+            gl.Viewport(0, 0, appState.renderer.render_w, appState.renderer.render_h);
+            gl.UseProgram(mainProg);
+            gl.ActiveTexture(gl.TEXTURE0);
+            gl.BindTexture(gl.TEXTURE_2D, pass1_textures[current]);
+            gl.Uniform1i(gl.GetUniformLocation(mainProg, "u_pass1"), 0);
+            gl.Uniform2f(gl.GetUniformLocation(mainProg, "u_resolution"), @floatFromInt(appState.renderer.render_w), @floatFromInt(appState.renderer.render_h));
+            gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 0);
+
+            // saveScreenshot reads the currently bound FBO, so keep screenshot_fbo bound.
+            utils.saveScreenshot(allocator, appState.renderer.render_w, appState.renderer.render_h, appState.renderer.total_accumulated_frames) catch |err| {
                 std.log.err("Failed to save screenshot: {}", .{err});
             };
+
+            // Restore window framebuffer + viewport for the ImGui draw that follows.
+            gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
+            gl.Viewport(0, 0, win_w, win_h);
             rendered_frame += 1;
             appState.renderer.want_to_save = false;
         }
