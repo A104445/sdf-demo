@@ -8,6 +8,7 @@ const cli = @import("cli.zig");
 const c = @import("c.zig").c;
 const ui = @import("ui.zig");
 const scenes = @import("scenes/scenes.zig");
+const video = @import("video.zig");
 
 fn errorCallback(errn: c_int, str: [*c]const u8) callconv(std.builtin.CallingConvention.c) void {
     std.log.err("GLFW Error '{}'': {s}", .{ errn, str });
@@ -182,6 +183,12 @@ pub fn main() !void {
     gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
     gl.BindTexture(gl.TEXTURE_2D, 0);
 
+    // Offline animation render: reusable render-resolution RGBA frame buffer + the active
+    // ffmpeg encoder (null when not rendering). Render res is fixed at startup.
+    const frame_buf = try allocator.alloc(u8, @intCast(appState.renderer.render_w * appState.renderer.render_h * 4));
+    defer allocator.free(frame_buf);
+    var encoder: ?video.Encoder = null;
+
     _ = c.CIMGUI_CHECKVERSION();
     _ = c.ImGui_CreateContext(null);
     defer c.ImGui_DestroyContext(null);
@@ -222,13 +229,68 @@ pub fn main() !void {
         c.glfwPollEvents();
 
         if (appState.scenes.requested_scene_index != appState.scenes.active_index) {
+            // A render shouldn't outlive the scene it was started for — finalize it.
+            if (appState.renderer.anim_rendering) {
+                if (encoder) |*e| e.finish() catch |err| std.log.err("ffmpeg finish failed: {}", .{err});
+                encoder = null;
+                appState.renderer.anim_rendering = false;
+                c.glfwSwapInterval(1);
+            }
+
             try appState.scenes.switchScene(@intCast(appState.scenes.requested_scene_index));
 
             appState.renderer.should_reset_accumulation = true;
             appState.renderer.total_accumulated_frames = 0;
+            // Stop playback across scene switches so the advance logic doesn't run against
+            // a static (no-animation) scene.
+            appState.renderer.anim_playing = false;
+            appState.renderer.anim_time = 0;
         }
 
         const current_scene = appState.scenes.active_scene;
+        const current_scene_entry = appState.scenes.registry[appState.scenes.active_index];
+
+        // Start a render when the UI requested one (spawn ffmpeg here so process/GL state
+        // stays in the loop, mirroring want_to_save).
+        if (appState.renderer.want_to_render and !appState.renderer.anim_rendering) {
+            const frames_f = @round(current_scene_entry.anim_duration * appState.renderer.anim_fps);
+            appState.renderer.anim_total_frames = @max(1, @as(u32, @intFromFloat(frames_f)));
+            appState.renderer.anim_frame_index = 0;
+            appState.renderer.anim_time = 0;
+            appState.renderer.anim_playing = false;
+            encoder = try video.Encoder.start(
+                allocator,
+                appState.renderer.render_w,
+                appState.renderer.render_h,
+                appState.renderer.anim_fps,
+                appState.renderer.render_crf,
+                current_scene_entry.metadata.name,
+            );
+            appState.renderer.anim_rendering = true;
+            appState.renderer.should_reset_accumulation = true;
+            c.glfwSwapInterval(0); // uncap so convergence isn't throttled to refresh rate
+        }
+        appState.renderer.want_to_render = false;
+
+        // Cancel an in-progress render: stop feeding frames, let ffmpeg finalize what it has.
+        if (appState.renderer.want_cancel_render) {
+            if (appState.renderer.anim_rendering) {
+                if (encoder) |*e| e.finish() catch |err| std.log.err("ffmpeg finish failed: {}", .{err});
+                encoder = null;
+                appState.renderer.anim_rendering = false;
+                c.glfwSwapInterval(1);
+            }
+            appState.renderer.want_cancel_render = false;
+        }
+
+        // While playing or rendering, the scene's animate hook drives the camera from the
+        // (frozen) animation clock; this overwrites manual control each frame (manual
+        // movement is skipped below during animation).
+        if (appState.renderer.anim_playing or appState.renderer.anim_rendering) {
+            if (current_scene_entry.animate_fn) |animate| {
+                animate(&appState.scenes.current_state, appState.renderer.anim_time);
+            }
+        }
 
         // UI
         try ui.render(&appState);
@@ -258,6 +320,11 @@ pub fn main() !void {
         const uniform_time = gl.GetUniformLocation(current_scene.?.shader_program, "u_time");
         gl.Uniform1f(uniform_time, @floatCast(current_time));
 
+        // Controlled animation clock, frozen for the duration of one output frame's
+        // accumulation. Scenes opt into geometry animation by reading u_animTime in GLSL.
+        const uniform_anim_time = gl.GetUniformLocation(current_scene.?.shader_program, "u_animTime");
+        gl.Uniform1f(uniform_anim_time, appState.renderer.anim_time);
+
         const uniform_frame = gl.GetUniformLocation(current_scene.?.shader_program, "u_frame");
         gl.Uniform1i(uniform_frame, @intCast(appState.renderer.total_accumulated_frames));
 
@@ -282,7 +349,7 @@ pub fn main() !void {
         const unifrom_focal_distance = gl.GetUniformLocation(current_scene.?.shader_program, "u_focusDist");
         gl.Uniform1f(unifrom_focal_distance, @floatCast(appState.scenes.current_state.focal_distance));
 
-        if (utils.handleMovement(&appState)) {
+        if (!appState.renderer.anim_playing and !appState.renderer.anim_rendering and utils.handleMovement(&appState)) {
             appState.renderer.should_reset_accumulation = true;
         }
 
@@ -298,7 +365,11 @@ pub fn main() !void {
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, EBO);
         gl.BindFramebuffer(gl.FRAMEBUFFER, fbos[1 - current]);
         const imgui_io = c.ImGui_GetIO();
-        if ((appState.mouse.moved or appState.renderer.should_reset_accumulation) and imgui_io.*.WantCaptureMouse == false) {
+        // Explicit resets (animation advance, scene switch, slider changes) always apply;
+        // only mouse-look-driven resets are gated by ImGui having the mouse.
+        const reset_accumulation = appState.renderer.should_reset_accumulation or
+            (appState.mouse.moved and imgui_io.*.WantCaptureMouse == false);
+        if (reset_accumulation) {
             const clear_color = [4]f32{ 0.0, 0.0, 0.0, 0.0 };
             gl.ClearBufferfv(gl.COLOR, 0, @ptrCast(&clear_color));
 
@@ -364,6 +435,56 @@ pub fn main() !void {
         c.cImGui_ImplOpenGL3_RenderDrawData(c.ImGui_GetDrawData());
 
         appState.renderer.total_accumulated_frames += 1;
+
+        // Animation stepping: once the current frame has accumulated enough samples, either
+        // (preview) advance + loop, or (render) capture the converged frame to ffmpeg and
+        // advance once through to the end. Either way request an accumulation reset so the
+        // next frame converges fresh.
+        const animating = appState.renderer.anim_playing or appState.renderer.anim_rendering;
+        if (animating and
+            appState.renderer.total_accumulated_frames >= appState.renderer.samples_per_anim_frame)
+        {
+            if (appState.renderer.anim_rendering) {
+                // Tone-map the converged accumulation texture into the render-resolution
+                // screenshot FBO (same as the want_to_save path), then read it back and pipe
+                // the raw RGBA bytes to ffmpeg. ffmpeg handles the vertical flip.
+                gl.BindFramebuffer(gl.FRAMEBUFFER, screenshot_fbo);
+                gl.Viewport(0, 0, appState.renderer.render_w, appState.renderer.render_h);
+                gl.UseProgram(mainProg);
+                gl.ActiveTexture(gl.TEXTURE0);
+                gl.BindTexture(gl.TEXTURE_2D, pass1_textures[current]);
+                gl.Uniform1i(gl.GetUniformLocation(mainProg, "u_pass1"), 0);
+                gl.Uniform2f(gl.GetUniformLocation(mainProg, "u_resolution"), @floatFromInt(appState.renderer.render_w), @floatFromInt(appState.renderer.render_h));
+                gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 0);
+                gl.ReadPixels(0, 0, appState.renderer.render_w, appState.renderer.render_h, gl.RGBA, gl.UNSIGNED_BYTE, frame_buf.ptr);
+                gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
+                gl.Viewport(0, 0, win_w, win_h);
+
+                if (encoder) |*e| {
+                    e.writeFrame(frame_buf) catch |err| std.log.err("ffmpeg write failed: {}", .{err});
+                }
+
+                appState.renderer.anim_frame_index += 1;
+                if (appState.renderer.anim_frame_index >= appState.renderer.anim_total_frames) {
+                    if (encoder) |*e| e.finish() catch |err| std.log.err("ffmpeg finish failed: {}", .{err});
+                    encoder = null;
+                    appState.renderer.anim_rendering = false;
+                    c.glfwSwapInterval(1);
+                } else {
+                    // Frame-indexed time: deterministic, no float drift across the render.
+                    appState.renderer.anim_time = @as(f32, @floatFromInt(appState.renderer.anim_frame_index)) / appState.renderer.anim_fps;
+                    appState.renderer.should_reset_accumulation = true;
+                }
+            } else {
+                // Preview: loop forever.
+                appState.renderer.anim_time += 1.0 / appState.renderer.anim_fps;
+                if (appState.renderer.anim_time >= current_scene_entry.anim_duration) {
+                    appState.renderer.anim_time = 0;
+                }
+                appState.renderer.should_reset_accumulation = true;
+            }
+        }
+
         spf_frames += 1;
         const spf_current_time = c.glfwGetTime();
         if (spf_current_time - appState.metrics.last_time >= 1.0) {

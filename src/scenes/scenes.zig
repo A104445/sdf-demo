@@ -18,6 +18,9 @@ pub const registry: []const Scene.SceneEntry = blk: {
             .metadata = mod.init_metadata(),
             .init_fn = mod.init,
             .init_cam_fn = mod.init_cam,
+            // Optional animation members — a scene opts in just by declaring them.
+            .animate_fn = if (@hasDecl(mod, "animate")) mod.animate else null,
+            .anim_duration = if (@hasDecl(mod, "anim_duration")) mod.anim_duration else 0,
         }};
     }
     break :blk list;

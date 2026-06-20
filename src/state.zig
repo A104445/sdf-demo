@@ -60,6 +60,23 @@ pub const renderer_state = struct {
     want_to_save: bool = false,
     render_w: c_int = 0,
     render_h: c_int = 0,
+
+    // Animation playback (foundation): a controlled clock the renderer holds constant
+    // for one output frame's accumulation, then steps. See main loop / animate hook.
+    anim_playing: bool = false, // playback toggle
+    anim_time: f32 = 0, // the controlled clock (seconds), frozen per frame
+    anim_fps: f32 = 24, // render setting: frames per second of the output
+    // accumulation iterations per animation frame before advancing the clock.
+    // Distinct from samples_per_frame/u_spf (GPU samples within one draw).
+    samples_per_anim_frame: u32 = 128,
+
+    // Offline render-to-video (pipes converged frames to ffmpeg -> render/<scene>.mp4).
+    anim_rendering: bool = false, // a render is in progress
+    anim_frame_index: u32 = 0, // frame currently being rendered
+    anim_total_frames: u32 = 0, // = round(anim_duration * anim_fps)
+    render_crf: c_int = 17, // h264 quality (lower = better; 0 ~ lossless)
+    want_to_render: bool = false, // UI -> loop: start a render (mirrors want_to_save)
+    want_cancel_render: bool = false, // UI -> loop: cancel the in-progress render
 };
 
 pub const app_state = struct {

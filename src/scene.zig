@@ -8,6 +8,9 @@ const c = @cImport({
 
 pub const SceneInitFn = *const fn (std.mem.Allocator) anyerror!Scene;
 pub const CamInitFn = *const fn () state.scene_state;
+// Mutates scene_state for the given animation clock value `t` (seconds). Must NOT
+// touch GL — the mutated state flows to the shader through the normal uniform upload.
+pub const AnimateFn = *const fn (s: *state.scene_state, t: f32) void;
 
 pub const SceneMetadata = struct {
     name: [:0]const u8 = "",
@@ -29,4 +32,6 @@ pub const SceneEntry = struct {
     metadata: SceneMetadata,
     init_fn: SceneInitFn,
     init_cam_fn: CamInitFn,
+    animate_fn: ?AnimateFn = null, // null = static scene
+    anim_duration: f32 = 0, // loop length in seconds; 0 = no animation
 };

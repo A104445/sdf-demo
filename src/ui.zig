@@ -68,6 +68,46 @@ pub fn render(appState: *state.app_state) !void {
     // if (c.ImGui_SliderInt("Color temperature", @ptrCast(&light_temperature), 1000, 7000)) {
     //     // std.debug.print("temp:{any}\n", .{light_temperature});
     // }
+
+    c.ImGui_SeparatorText("Animation");
+    const active_entry = appState.scenes.registry[appState.scenes.active_index];
+    if (active_entry.animate_fn == null) {
+        c.ImGui_Text("No animation for this scene");
+    } else if (appState.renderer.anim_rendering) {
+        // A render is in flight: only show progress + cancel.
+        c.ImGui_Text("Rendering frame %d / %d", appState.renderer.anim_frame_index, appState.renderer.anim_total_frames);
+        if (c.ImGui_Button("Cancel Render")) {
+            appState.renderer.want_cancel_render = true;
+        }
+    } else {
+        if (appState.renderer.anim_playing) {
+            if (c.ImGui_Button("Stop Animation")) {
+                appState.renderer.anim_playing = false;
+            }
+        } else {
+            if (c.ImGui_Button("Play Animation")) {
+                appState.renderer.anim_playing = true;
+                appState.renderer.anim_time = 0;
+                appState.renderer.should_reset_accumulation = true;
+            }
+        }
+
+        if (c.ImGui_Button("Render Animation")) {
+            appState.renderer.want_to_render = true;
+        }
+
+        _ = c.ImGui_SliderFloat("FPS", @ptrCast(&appState.renderer.anim_fps), 1.0, 60.0);
+
+        var spf_anim: c_int = @intCast(appState.renderer.samples_per_anim_frame);
+        if (c.ImGui_SliderInt("Samples/frame", @ptrCast(&spf_anim), 1, 4096)) {
+            appState.renderer.samples_per_anim_frame = @intCast(spf_anim);
+        }
+
+        _ = c.ImGui_SliderInt("CRF (quality)", @ptrCast(&appState.renderer.render_crf), 0, 51);
+
+        c.ImGui_Text("Time: %.2f / %.2f s", appState.renderer.anim_time, active_entry.anim_duration);
+    }
+
     c.ImGui_End();
 
     c.ImGui_Render();

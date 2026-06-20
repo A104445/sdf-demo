@@ -18,6 +18,18 @@ pub fn init_cam() state.scene_state {
     };
 }
 
+// Opt-in animation: orbit the camera around the origin exactly once over the duration.
+// `anim_duration` controls SPEED (seconds per orbit) independently of FPS (smoothness):
+// the phase is normalized so one full revolution always spans [0, anim_duration].
+pub const anim_duration: f32 = 12.0; // seconds for one orbit (raise = slower)
+pub fn animate(s: *state.scene_state, t: f32) void {
+    const tau: f32 = 6.2831853;
+    const angle = (t / anim_duration) * tau; // one full orbit over the duration
+    const r: f32 = 67.0; // ~ initial distance from origin
+    s.cam_pos = .{ @sin(angle) * r, s.cam_pos[1], @cos(angle) * r };
+    s.yaw = angle; // turn to keep facing roughly toward the origin as it orbits
+}
+
 pub fn init(allocator: std.mem.Allocator) !scene.Scene {
     const vert_path = "./shaders/shader.vert";
     const vert_source = try shaders.readFileToString(allocator, vert_path);
