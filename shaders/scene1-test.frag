@@ -194,6 +194,60 @@ vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness) {
   return normalize(sampleVec);
 }
 
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    float a = roughness;
+    float k = (a * a) / 2.0; // Path tracing / IBL k-value
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+    return nom / denom;
+}
+
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+    return ggx1 * ggx2;
+}
+
+// Full Cook-Torrance BRDF (diffuse + GGX specular), used by NEE.
+vec3 evalCookTorranceBRDF(vec3 N, vec3 V, vec3 L, Material mat) {
+  vec3 H = normalize(V + L);
+
+  float NdotV = max(dot(N, V), 1e-4);
+  float NdotL = max(dot(N, L), 1e-4);
+  float NdotH = max(dot(N, H), 0.0);
+  float HdotV = max(dot(H, V), 0.0);
+
+  // 1. Diffuse component
+  vec3 diffuseColor = mat.albedo * (1.0 - mat.metallic);
+  vec3 f_diffuse = diffuseColor * (1.0 / c_pi);
+
+  // 2. Specular component (GGX)
+  float a = mat.roughness * mat.roughness;
+  float a2 = a * a;
+
+  float denomD = (NdotH * NdotH * (a2 - 1.0) + 1.0);
+  float D = a2 / (c_pi * denomD * denomD);
+
+  float k_direct = ((mat.roughness + 1.0) * (mat.roughness + 1.0)) / 8.0;
+  float ggx1 = NdotL / (NdotL * (1.0 - k_direct) + k_direct);
+  float ggx2 = NdotV / (NdotV * (1.0 - k_direct) + k_direct);
+  float G = ggx1 * ggx2;
+
+  vec3 F0 = mix(vec3(0.04), mat.albedo, mat.metallic);
+  vec3 F = F0 + (1.0 - F0) * pow(clamp(1.0 - HdotV, 0.0, 1.0), 5.0);
+
+  vec3 f_specular = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
+
+  // Energy conservation
+  vec3 kS = F;
+  vec3 kD = vec3(1.0) - kS;
+  kD *= 1.0 - mat.metallic; // pure metals have no diffuse
+
+  return (kD * f_diffuse) + f_specular;
+}
+
 float dot2(vec3 v) {
   return dot(v, v);
 }
@@ -453,7 +507,7 @@ bool isVisibleToLight(vec3 origin, vec3 dir, float maxDist) {
   return true;
 }
 
-vec3 sampleRectLight(vec3 hitPos, vec3 normal, Material mat, inout uint rngState) {
+vec3 sampleRectLight(vec3 hitPos, vec3 normal, vec3 viewDir, Material mat, inout uint rngState) {
   // Glass/water shouldn't calculate direct diffuse shadows this way
   if (mat.transmission > 0.0) {
     return vec3(0.0);
@@ -506,9 +560,8 @@ vec3 sampleRectLight(vec3 hitPos, vec3 normal, Material mat, inout uint rngState
     return vec3(0.0);
   }
 
-  // 4. Calculate final contribution
-  vec3 diffuseColor = mat.albedo * (1.0 - mat.metallic);
-  vec3 f = diffuseColor * (1.0 / c_pi); // Lambertian BRDF
+  // 4. Calculate final contribution (full Cook-Torrance BRDF)
+  vec3 f = evalCookTorranceBRDF(normal, viewDir, wi, mat);
   vec3 Le = SRGBToLinear(u_tempColor) * c_lightEmissionStrength;
 
   return Le * f * ndotl / pdfW;
@@ -599,11 +652,13 @@ vec3 getColorForRay(in vec3 startRayPos, in vec3 startRayDir,
       ret += throughput * hitInfo.material.emissive;
     }
 
-    if (length(hitInfo.material.emissive) < 1e-6 &&
-        hitInfo.material.transmission <= 0.0) {
+    // Evaluate if this is a delta material ONCE
+    bool isDelta = hitInfo.material.roughness <= 0.02;
+
+    // Next Event Estimation (Direct Lighting) — skip on lights and deltas
+    if (length(hitInfo.material.emissive) < 1e-6 && !isDelta) {
       vec3 hitPosDirect = rayPos + rayDir * hitInfo.dist;
-      ret += throughput * sampleRectLight(hitPosDirect, hitInfo.normal, hitInfo.material,
-            rngState);
+      ret += throughput * sampleRectLight(hitPosDirect, hitInfo.normal, -rayDir, hitInfo.material, rngState);
     }
 
     if (hitInfo.fromInside)
@@ -618,49 +673,74 @@ vec3 getColorForRay(in vec3 startRayPos, in vec3 startRayDir,
     float P_transmit = hitInfo.material.transmission * (1.0f - P_reflect);
     float P_diffuse = 1.0f - (P_reflect + P_transmit);
 
-    P_reflect = max(P_reflect, 0.001f);
-    P_transmit = max(P_transmit, 0.001f);
-    P_diffuse = max(P_diffuse, 0.001f);
-
     float roll = RandomValue(rngState);
     vec3 hitPos = rayPos + rayDir * hitInfo.dist;
 
     if (roll < P_reflect) {
-      vec3 H = ImportanceSampleGGX(
-          vec2(RandomValue(rngState), RandomValue(rngState)),
-          hitInfo.normal, hitInfo.material.roughness);
-      rayDir = reflect(rayDir, H);
-      rayPos = hitPos + hitInfo.normal * c_rayPosNormalNudge;
-
+      // PATH A: SPECULAR REFLECTION
       vec3 reflectionColor = mix(vec3(1.0f), hitInfo.material.albedo, hitInfo.material.metallic);
-      throughput *= reflectionColor;
-      throughput /= P_reflect;
-      prevWasDelta = hitInfo.material.roughness <= 0.02;
+
+      if (isDelta) {
+        // Bypass GGX math for smooth surfaces (prevents energy spikes)
+        rayDir = reflect(rayDir, hitInfo.normal);
+        throughput *= reflectionColor;
+      } else {
+        vec3 V = -rayDir;
+        vec3 H = ImportanceSampleGGX(vec2(RandomValue(rngState), RandomValue(rngState)), hitInfo.normal, hitInfo.material.roughness);
+        rayDir = reflect(rayDir, H);
+
+        // Horizon Check: kill ray if the microfacet reflected it INSIDE the object
+        if (dot(rayDir, hitInfo.normal) <= 0.0) break;
+
+        vec3 L = rayDir;
+        float NdotV = max(dot(hitInfo.normal, V), 1e-4);
+        float NdotL = max(dot(hitInfo.normal, L), 1e-4);
+        float NdotH = max(dot(hitInfo.normal, H), 1e-4);
+        float VdotH = max(dot(V, H), 1e-4);
+        float G = GeometrySmith(hitInfo.normal, V, L, hitInfo.material.roughness);
+        float ggxWeight = (G * VdotH) / (NdotV * NdotH);
+
+        throughput *= reflectionColor * ggxWeight;
+      }
+
+      rayPos = hitPos + hitInfo.normal * c_rayPosNormalNudge;
+      prevWasDelta = isDelta;
+
     } else if (roll < P_reflect + P_transmit) {
-      vec3 H = ImportanceSampleGGX(
-          vec2(RandomValue(rngState), RandomValue(rngState)),
-          hitInfo.normal, hitInfo.material.roughness);
-      rayDir = refract(rayDir, H, eta);
+      // PATH B: TRANSMISSION (GLASS/WATER)
+      if (isDelta) {
+        rayDir = refract(rayDir, hitInfo.normal, eta);
+      } else {
+        vec3 H = ImportanceSampleGGX(vec2(RandomValue(rngState), RandomValue(rngState)), hitInfo.normal, hitInfo.material.roughness);
+        rayDir = refract(rayDir, H, eta);
+      }
+
+      if (length(rayDir) < 0.01f) {
+        break; // Total Internal Reflection
+      }
+
+      // Horizon Check: kill ray if microfacet refracted it back OUT of the object
+      if (dot(rayDir, hitInfo.normal) >= 0.0) break;
 
       rayPos = hitPos - hitInfo.normal * c_rayPosNormalNudge;
+      prevWasDelta = isDelta;
 
-      throughput /= P_transmit;
-      prevWasDelta = hitInfo.material.roughness <= 0.02;
     } else {
+      // PATH C: DIFFUSE
       rayDir = normalize(hitInfo.normal + RandomUnitVector(rngState));
       rayPos = hitPos + hitInfo.normal * c_rayPosNormalNudge;
 
-      vec3 diffuseColor = hitInfo.material.albedo * (1.0f - hitInfo.material.metallic);
-      throughput *= diffuseColor;
-      throughput /= P_diffuse;
+      throughput *= hitInfo.material.albedo;
       prevWasDelta = false;
     }
 
-    float p = max(throughput.r, max(throughput.g, throughput.b));
+    float p = min(max(throughput.r, max(throughput.g, throughput.b)), 1.0f);
     if (RandomValue(rngState) > p) {
       break;
     }
-    throughput *= 1.0f / p;
+    if (p > 0.0) {
+      throughput *= 1.0f / p;
+    }
   }
 
   return ret;
