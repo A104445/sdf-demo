@@ -6,7 +6,7 @@ const shaders = @import("../shaders.zig");
 const std = @import("std");
 
 pub fn init_metadata() scene.SceneMetadata {
-    return scene.SceneMetadata{ .name = "scene1-test" };
+    return scene.SceneMetadata{ .name = "textured scene" };
 }
 
 pub fn init_cam() state.scene_state {
